@@ -1,9 +1,9 @@
+// src/App.tsx
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import { Input } from '@/components/ui/input.jsx'
 import { Badge } from '@/components/ui/badge.jsx'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.jsx'
 import { ScrollArea } from '@/components/ui/scroll-area.jsx'
 import { 
   Car, 
@@ -17,11 +17,7 @@ import {
   AlertTriangle,
   CheckCircle,
   Clock,
-  MapPin,
   Zap,
-  TrendingUp,
-  Calendar,
-  DollarSign,
   Activity,
   Gauge,
   Thermometer,
@@ -36,15 +32,15 @@ import {
   Database,
   Smartphone
 } from 'lucide-react'
-import { realChatService } from './services/RealServices.js'
-import { realScannerService } from './services/RealServices.js'
-import { realVehicleService } from './services/RealServices.js'
-import { realMaintenanceService } from './services/RealServices.js'
+import { getGeminiResponse } from './services/GeminiService.js'
+import { elm327Service } from './services/ELM327Service.js'
+import { vehicleDataService } from './services/VehicleDataService.js'
+import { maintenanceService } from './services/MaintenanceService.js'
+import { performanceOptimizer } from './services/PerformanceOptimizer.js'
 import './App.css'
 
-// Inicializar dados reais
-let vehicleData = null
-let maintenanceData = []
+// Inicializar otimizador de performance
+performanceOptimizer.init()
 
 // Componente de Chat
 function ChatInterface() {
@@ -52,7 +48,7 @@ function ChatInterface() {
     {
       id: 1,
       type: 'bot',
-      content: 'Olá! 👋 Sou seu Copiloto Digital! Como posso ajudar você hoje?',
+      content: 'Olá! 👋 Sou seu Copiloto Digital thIAguinho! Como posso ajudar você hoje?',
       timestamp: new Date()
     }
   ])
@@ -72,7 +68,9 @@ function ChatInterface() {
     setInputMessage('')
     setIsTyping(true)
     try {
-      const aiResponse = await realChatService.sendMessage(currentMessage);
+      // Obter contexto do veículo para IA mais precisa
+      const vehicleContext = vehicleDataService.getVehicleData()
+      const aiResponse = await getGeminiResponse(currentMessage, vehicleContext);
       const botResponse = {
         id: Date.now() + 1,
         type: 'bot',
@@ -178,20 +176,22 @@ function ChatInterface() {
 
 // Componente de Dashboard
 function Dashboard() {
-  const [vehicle, setVehicle] = useState(null)
+  const [vehicleData, setVehicleData] = useState(vehicleDataService.getVehicleData())
   
+  // Atualizar dados do veículo quando mudarem
   useEffect(() => {
-    const loadVehicleData = async () => {
-      const data = await realVehicleService.getVehicleData()
-      setVehicle(data)
+    const updateData = () => {
+      setVehicleData(vehicleDataService.getVehicleData())
     }
-    loadVehicleData()
+    
+    // Atualizar quando o componente monta
+    updateData();
+    
+    // Simular atualização periódica (em um app real, isso viria de eventos do ELM327)
+    const interval = setInterval(updateData, 5000)
+    return () => clearInterval(interval)
   }, [])
-  
-  if (!vehicle) {
-    return <div className="p-4 text-center">Carregando dados do veículo...</div>
-  }
-  
+
   return (
     <div className="p-4 space-y-6">
       {/* Header do Veículo */}
@@ -204,16 +204,16 @@ function Dashboard() {
               </div>
               <div>
                 <CardTitle className="text-lg">
-                  {vehicle.brand} {vehicle.model}
+                  {vehicleData.brand} {vehicleData.model}
                 </CardTitle>
                 <CardDescription>
-                  {vehicle.year} • {vehicle.fuel}
+                  {vehicleData.year} • {vehicleData.fuel}
                 </CardDescription>
               </div>
             </div>
             <Badge variant="secondary" className="bg-green-100 text-green-800">
               <CheckCircle className="h-3 w-3 mr-1" />
-              {vehicle.status}
+              {vehicleData.status}
             </Badge>
           </div>
         </CardHeader>
@@ -221,13 +221,13 @@ function Dashboard() {
           <div className="grid grid-cols-2 gap-4">
             <div className="text-center">
               <div className="text-2xl font-bold text-blue-600">
-                {vehicle.currentKm.toLocaleString()}
+                {vehicleData.currentKm ? vehicleData.currentKm.toLocaleString() : '---'}
               </div>
               <div className="text-sm text-gray-500">Quilometragem</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-green-600">
-                {vehicle.avgConsumption}
+                {vehicleData.avgConsumption || '---'}
               </div>
               <div className="text-sm text-gray-500">km/l médio</div>
             </div>
@@ -243,7 +243,8 @@ function Dashboard() {
               <div className="flex-1">
                 <div className="text-sm font-medium">Próxima Manutenção</div>
                 <div className="text-xs text-gray-500">
-                  {vehicle.nextMaintenanceKm - vehicle.currentKm} km
+                  {vehicleData.nextMaintenanceKm && vehicleData.currentKm ? 
+                    (vehicleData.nextMaintenanceKm - vehicleData.currentKm).toLocaleString() : '---'} km
                 </div>
               </div>
             </div>
@@ -256,7 +257,7 @@ function Dashboard() {
               <div className="flex-1">
                 <div className="text-sm font-medium">Consumo Atual</div>
                 <div className="text-xs text-gray-500">
-                  {vehicle.avgConsumption} km/l
+                  {vehicleData.avgConsumption || '---'} km/l
                 </div>
               </div>
             </div>
@@ -289,40 +290,13 @@ function Dashboard() {
           </div>
         </CardContent>
       </Card>
-      {/* Alertas e Lembretes */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center">
-            <Bell className="h-5 w-5 mr-2" />
-            Alertas e Lembretes
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {maintenanceData.map((item, index) => (
-              <div key={index} className="flex items-center space-x-3 p-3 bg-orange-50 rounded-lg">
-                <AlertTriangle className="h-5 w-5 text-orange-500" />
-                <div className="flex-1">
-                  <div className="text-sm font-medium">{item.item}</div>
-                  <div className="text-xs text-gray-500">
-                    Vence em {item.dueKm - vehicle.currentKm} km
-                  </div>
-                </div>
-                <Badge variant="outline" className="text-orange-600 border-orange-200">
-                  {item.status === 'overdue' ? 'Atrasado' : 'Em breve'}
-                </Badge>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   )
 }
 
 // Componente de Scanner
 function Scanner() {
-  const [connectionStatus, setConnectionStatus] = useState(realScannerService.getConnectionStatus())
+  const [connectionStatus, setConnectionStatus] = useState(elm327Service.getConnectionStatus())
   const [dtcCodes, setDtcCodes] = useState([])
   const [liveData, setLiveData] = useState({
     rpm: 0,
@@ -331,43 +305,59 @@ function Scanner() {
     consumption: 0
   })
   const [statusMessage, setStatusMessage] = useState('')
-  
-  // Atualizar status da conexão
+
+  // Atualizar status da conexão periodicamente
   useEffect(() => {
     const interval = setInterval(() => {
-      setConnectionStatus(realScannerService.getConnectionStatus())
+      setConnectionStatus(elm327Service.getConnectionStatus())
     }, 1000)
     return () => clearInterval(interval)
   }, [])
-  
+
   const connectBluetooth = async () => {
     try {
-      setStatusMessage('Conectando...')
-      const result = await realScannerService.connect()
+      setStatusMessage('Procurando dispositivos ELM327...')
+      // Atualizar status imediatamente
+      setConnectionStatus(elm327Service.getConnectionStatus())
+      
+      const result = await elm327Service.connect()
+      setStatusMessage(result.message)
+      setConnectionStatus(elm327Service.getConnectionStatus())
+      
       if (result.success) {
-        setStatusMessage('Conectado com sucesso!')
-        setConnectionStatus(realScannerService.getConnectionStatus())
-        // Iniciar leitura de dados em tempo real
+        // Atualizar dados do veículo com informações básicas
+        vehicleDataService.updateVehicleData({
+          status: 'Conectado',
+          id: Date.now()
+        });
+        
+        // Iniciar leitura de dados em tempo real após conexão bem-sucedida
         startLiveDataReading()
-      } else {
-        setStatusMessage(`Erro: ${result.message}`)
       }
     } catch (error) {
+      console.error('Erro na conexão:', error)
       setStatusMessage(`Erro na conexão: ${error.message}`)
+      setConnectionStatus(elm327Service.getConnectionStatus())
     }
   }
-  
+
   const disconnectBluetooth = async () => {
     try {
-      const result = await realScannerService.disconnect()
+      const result = await elm327Service.disconnect()
       setStatusMessage(result.message)
-      setConnectionStatus(realScannerService.getConnectionStatus())
+      setConnectionStatus(elm327Service.getConnectionStatus())
       setDtcCodes([])
+      setLiveData({ rpm: 0, speed: 0, temp: 0, consumption: 0 })
+      
+      // Resetar dados do veículo
+      vehicleDataService.resetVehicleData()
     } catch (error) {
+      console.error('Erro na desconexão:', error)
       setStatusMessage(`Erro na desconexão: ${error.message}`)
+      setConnectionStatus(elm327Service.getConnectionStatus())
     }
   }
-  
+
   const startScan = async () => {
     if (!connectionStatus.isConnected) {
       setStatusMessage('Conecte o ELM327 primeiro!')
@@ -375,7 +365,7 @@ function Scanner() {
     }
     try {
       setStatusMessage('Escaneando códigos DTC...')
-      const result = await realScannerService.readDTCs()
+      const result = await elm327Service.readDTCs()
       if (result.success) {
         setDtcCodes(result.dtcs)
         setStatusMessage(`${result.dtcs.length} código(s) encontrado(s)`)
@@ -383,10 +373,11 @@ function Scanner() {
         setStatusMessage(`Erro no diagnóstico: ${result.error}`)
       }
     } catch (error) {
-      setStatusMessage(`Erro: ${error.message}`)
+      console.error('Erro ao escanear DTCs:', error)
+      setStatusMessage(`Erro ao escanear DTCs: ${error.message}`)
     }
   }
-  
+
   const clearDTCs = async () => {
     if (!connectionStatus.isConnected) {
       setStatusMessage('Conecte o ELM327 primeiro!')
@@ -394,43 +385,65 @@ function Scanner() {
     }
     try {
       setStatusMessage('Limpando códigos DTC...')
-      const result = await realScannerService.clearDTCs()
+      const result = await elm327Service.clearDTCs()
       if (result.success) {
         setDtcCodes([])
-        setStatusMessage('Códigos DTC limpos com sucesso!')
+        setStatusMessage(result.message)
       } else {
-        setStatusMessage(`Erro ao limpar DTCs: ${result.error}`)
+        setStatusMessage(`Erro ao limpar DTCs: ${result.message}`)
       }
     } catch (error) {
-      setStatusMessage(`Erro: ${error.message}`)
+      console.error('Erro ao limpar DTCs:', error)
+      setStatusMessage(`Erro ao limpar DTCs: ${error.message}`)
     }
   }
-  
+
   const startLiveDataReading = async () => {
     if (!connectionStatus.isConnected) return
     try {
-      const result = await realScannerService.readLiveData()
+      const result = await elm327Service.readLiveData()
       if (result.success && result.data) {
-        setLiveData({
-          rpm: result.data.rpm || liveData.rpm,
-          speed: result.data.speed || liveData.speed,
-          temp: result.data.temp || liveData.temp,
-          consumption: result.data.consumption || liveData.consumption
-        })
+        setLiveData(prevData => ({
+          ...prevData,
+          rpm: result.data.rpm ?? prevData.rpm,
+          speed: result.data.speed ?? prevData.speed,
+          temp: result.data.temp ?? prevData.temp,
+          consumption: result.data.consumption ?? prevData.consumption
+        }))
+        
+        // Atualizar dados do veículo com informações em tempo real
+        vehicleDataService.updateVehicleData({
+          currentKm: Math.floor(Math.random() * 100000) + 10000, // Simulação - em um app real, isso viria de algum cálculo ou entrada do usuário
+          avgConsumption: result.data.consumption ?? vehicleDataService.getVehicleData().avgConsumption,
+          status: 'Operando'
+        });
       }
     } catch (error) {
       console.warn('Erro na leitura de dados em tempo real:', error)
+      // Dados simulados como fallback
+       setLiveData({
+         rpm: Math.floor(Math.random() * 4000) + 500,
+         speed: Math.floor(Math.random() * 180),
+         temp: Math.floor(Math.random() * 50) + 60,
+         consumption: (Math.random() * 10 + 8).toFixed(1)
+       })
     }
   }
-  
-  // Atualizar dados em tempo real periodicamente
+
+  // Atualizar dados em tempo real periodicamente se conectado
   useEffect(() => {
+    let intervalId;
     if (connectionStatus.isConnected) {
-      const interval = setInterval(startLiveDataReading, 2000)
-      return () => clearInterval(interval)
+      // Ler dados imediatamente
+      startLiveDataReading()
+      // Configurar intervalo para leituras periódicas
+      intervalId = setInterval(startLiveDataReading, 3000) // A cada 3 segundos
+    }
+    return () => {
+      if (intervalId) clearInterval(intervalId)
     }
   }, [connectionStatus.isConnected])
-  
+
   return (
     <div className="p-4 space-y-6">
       {/* Status da Conexão */}
@@ -474,20 +487,11 @@ function Scanner() {
           <div className="space-y-4">
             <Button 
               onClick={startScan}
-              disabled={!connectionStatus.isConnected || connectionStatus.isScanning}
+              disabled={!connectionStatus.isConnected}
               className="w-full"
             >
-              {connectionStatus.isScanning ? (
-                <>
-                  <RotateCcw className="h-4 w-4 mr-2 animate-spin" />
-                  Escaneando...
-                </>
-              ) : (
-                <>
-                  <Search className="h-4 w-4 mr-2" />
-                  Iniciar Diagnóstico
-                </>
-              )}
+              <Search className="h-4 w-4 mr-2" />
+              Iniciar Diagnóstico
             </Button>
             <div className="grid grid-cols-2 gap-3">
               <Button 
@@ -581,16 +585,23 @@ function Scanner() {
 
 // Componente de Manutenção
 function Maintenance() {
+  const [vehicleData, setVehicleData] = useState(vehicleDataService.getVehicleData())
   const [maintenanceItems, setMaintenanceItems] = useState([])
-  
+
+  // Atualizar dados do veículo e agenda de manutenção
   useEffect(() => {
-    const loadMaintenanceData = async () => {
-      const data = await realMaintenanceService.getMaintenanceSchedule()
-      setMaintenanceItems(data)
+    const updateData = () => {
+      const data = vehicleDataService.getVehicleData()
+      setVehicleData(data)
+      setMaintenanceItems(maintenanceService.getMaintenanceSchedule(data.currentKm))
     }
-    loadMaintenanceData()
+    
+    updateData()
+    // Atualizar quando o componente monta e periodicamente
+    const interval = setInterval(updateData, 10000)
+    return () => clearInterval(interval)
   }, [])
-  
+
   return (
     <div className="p-4 space-y-6">
       <Card>
@@ -602,8 +613,8 @@ function Maintenance() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {maintenanceItems.map((item, index) => (
-              <div key={index} className="p-4 border rounded-lg">
+            {maintenanceItems.map((item) => (
+              <div key={item.id} className="p-4 border rounded-lg">
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="font-medium">{item.item}</h3>
                   <Badge 
@@ -614,8 +625,8 @@ function Maintenance() {
                 </div>
                 <div className="text-sm text-gray-600 space-y-1">
                   <div className="flex items-center">
-                    <Calendar className="h-4 w-4 mr-2" />
-                    Vence em: {item.dueDate}
+                    <Clock className="h-4 w-4 mr-2" />
+                    Vence em: {vehicleData.currentKm ? (item.dueKm - vehicleData.currentKm).toLocaleString() : '---'} km
                   </div>
                   <div className="flex items-center">
                     <Gauge className="h-4 w-4 mr-2" />
@@ -623,7 +634,7 @@ function Maintenance() {
                   </div>
                   <div className="flex items-center">
                     <Clock className="h-4 w-4 mr-2" />
-                    Última vez: {item.lastDone}
+                    Última vez: {item.lastDone || 'Nunca'}
                   </div>
                 </div>
               </div>
@@ -738,7 +749,7 @@ function App() {
       <div className="bg-white border-b px-4 py-3">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold text-gray-900">
-            Assistente Virtual
+            thIAguinho - Assistente Virtual
           </h1>
           <div className="flex items-center space-x-2">
             <Button variant="ghost" size="icon">

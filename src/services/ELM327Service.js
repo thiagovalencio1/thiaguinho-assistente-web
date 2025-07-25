@@ -32,7 +32,7 @@ class ELM327Service {
 
     try {
       this.isScanning = true;
-      console.log("🔍 Procurando dispositivos ELM327...");
+      console.log("�� Procurando dispositivos ELM327...");
 
       // Solicitar dispositivo com os serviços necessários
       // UUIDs baseados na análise do Torque
